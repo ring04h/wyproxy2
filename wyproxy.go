@@ -326,6 +326,9 @@ func main() {
     flag.Parse()
 
     proxy := goproxy.NewProxyHttpServer()
+    log.Printf("wyproxy Start success... \n")
+    log.Printf("Listening %s \n", *addr)
+
     proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
 
     proxy.OnRequest().DoFunc(handleRequest)
