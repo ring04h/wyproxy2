@@ -181,7 +181,11 @@ func handleResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
 
     // Attaching capture tool.
     RespCapture := New(resp, reqbody, respbody).Parser()
-    fmt.Println(RespCapture)
+    // fmt.Println(RespCapture)
+
+    b, err := json.Marshal(RespCapture)
+    checkErr(err)
+    fmt.Println(string(b))
 
     // printHeader(resp.Header)
     // fmt.Println(resp.StatusCode, resp.Proto, resp.ContentLength, resp.TransferEncoding)
