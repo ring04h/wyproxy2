@@ -22,7 +22,7 @@ go build wyproxy.go
 ## 启动代理服务器
 ```bash
 cd /root/golang/
-// 使用自定义的数据库配置信息
+# 使用自定义的数据库配置信息
 export WYDSN='root:@tcp(localhost:3306)/wyproxy?charset=utf8'
 ./wyproxy -addr 0.0.0.0:9999
 ```
