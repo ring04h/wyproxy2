@@ -17,6 +17,13 @@ import (
     "goproxy"
 )
 
+const (
+    version = "0.1"
+    default_mysql_conn = "root:@tcp(localhost:3306)/test?charset=utf8"
+    default_table      = `capture`
+    record_static      = true          // Save static res request record.
+)
+
 var (
     // save to mysql database DSN
     mysql_conn = os.Getenv("WYDSN")
@@ -49,12 +56,6 @@ var (
         "application/x-ms-wmd",
         "application/x-shockwave-flash",
     }
-)
-
-const (
-    version = "0.1"
-    default_mysql_conn = "root:@tcp(localhost:3306)/test?charset=utf8"
-    default_table      = `capture`
 )
 
 const tableCreateSQL = `CREATE TABLE if not exists ` + default_table + ` (
@@ -137,7 +138,7 @@ func (parser *ParserHTTP) Parser() Response {
     )
     
     if len(parser.r.Header["Content-Type"]) >= 1 {
-        ctype = parser.r.Header["Content-Type"][0]
+        ctype = GetContentType(parser.r.Header["Content-Type"][0])
     }
 
     if len(parser.r.Header["Content-Length"]) >= 1 {
@@ -257,6 +258,12 @@ func printHeader(header http.Header) {
     log.Printf("headers:\n%s", headers)
 }
 
+func toJsonHeader(header http.Header) string {
+    js, err := json.Marshal(header)
+    checkErr(err)
+    return string(js)
+}
+
 func handleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
     reqbody, err := RequestBody(req)
     checkErr(err)
@@ -273,19 +280,42 @@ func handleResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
 
     // Attaching capture tool.
     RespCapture := New(resp, reqbody, respbody).Parser()
-    // fmt.Println(RespCapture)
 
-    b, err := json.Marshal(RespCapture)
-    checkErr(err)
-    fmt.Println(string(b))
+    // Saving to MYSQL with a goroutine.
+    go func() {
+        var static_resource int = 0
+        static := NewResType(
+                        RespCapture.Extension, 
+                        RespCapture.ContentType).isStatic()
+        if static {
+            if record_static {
+                static_resource = 1
+                RespCapture.Body = []byte(nil)
+                db, err := sql.Open("mysql", mysql_conn)
+                checkErr(err)
 
-    // js, _ := json.Marshal(RespCapture.RequestHeader)
-    // fmt.Println(string(js))
+                stmt, err := db.Prepare("INSERT capture SET content_length=?, static_resource=?, extension=?, url=?, status_code=?, host=?, port=?, content=?, header=?, content_type=?, path=?, scheme=?, method=?, request_content=?, request_header=?, date_start=?, date_end=?")
+                checkErr(err)
 
-    // printHeader(resp.Header)
-    // fmt.Println(resp.StatusCode, resp.Proto, resp.ContentLength, resp.TransferEncoding)
-    // fmt.Println(resp.Request.URL, resp.Request.Method, resp.Request.Host, resp.Request.RemoteAddr)
-    // fmt.Println(resp.Request.PostForm)
+                _, err = stmt.Exec(RespCapture.ContentLength, static_resource, RespCapture.Extension, RespCapture.URL, RespCapture.Status, RespCapture.Host, RespCapture.Port, RespCapture.Body, toJsonHeader(RespCapture.Header), RespCapture.ContentType, RespCapture.Path, RespCapture.Scheme, RespCapture.Method, RespCapture.RequestBody, toJsonHeader(RespCapture.RequestHeader), RespCapture.DateStart, RespCapture.DateEnd)
+                checkErr(err)
+                
+                db.Close()
+            }
+        } else {
+            db, err := sql.Open("mysql", mysql_conn)
+            checkErr(err)
+
+            stmt, err := db.Prepare("INSERT capture SET content_length=?, static_resource=?, extension=?, url=?, status_code=?, host=?, port=?, content=?, header=?, content_type=?, path=?, scheme=?, method=?, request_content=?, request_header=?, date_start=?, date_end=?")
+            checkErr(err)
+
+            _, err = stmt.Exec(RespCapture.ContentLength, static_resource, RespCapture.Extension, RespCapture.URL, RespCapture.Status, RespCapture.Host, RespCapture.Port, RespCapture.Body, toJsonHeader(RespCapture.Header), RespCapture.ContentType, RespCapture.Path, RespCapture.Scheme, RespCapture.Method, RespCapture.RequestBody, toJsonHeader(RespCapture.RequestHeader), RespCapture.DateStart, RespCapture.DateEnd)
+            checkErr(err)
+
+            db.Close()
+        }
+    }()
+
     return resp
 }
 
