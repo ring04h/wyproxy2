@@ -15,6 +15,7 @@ import (
     _ "mysql"
     "database/sql"
     "goproxy"
+    "runtime"
 )
 
 const (
@@ -320,6 +321,8 @@ func handleResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
 }
 
 func main() {
+    // maxout concurrency
+    runtime.GOMAXPROCS(runtime.NumCPU())
 
     verbose := flag.Bool("v", false, "should every proxy request be logged to stdout")
     addr := flag.String("addr", ":8080", "proxy listen address")
