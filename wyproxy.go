@@ -80,7 +80,6 @@ const tableCreateSQL = `CREATE TABLE if not exists ` + default_table + ` (
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8`
 
 type Response struct {
-    ID            uint          `json:"id" db:",omitempty,json"`
     Origin        string        `json:"origin" db:",json"`
     Method        string        `json:"method" db:",json"`
     Status        int           `json:"status" db:",json"`
