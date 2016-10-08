@@ -8,6 +8,8 @@ import (
     "fmt"
     "bytes"
     "time"
+    "strings"
+    "strconv"
     "encoding/json"
     "io/ioutil"
     _ "mysql"
@@ -16,8 +18,37 @@ import (
 )
 
 var (
+    // save to mysql database DSN
     mysql_conn = os.Getenv("WYDSN")
+
+    // request.Body temp var
     RequestBodyMap = make(map[int64][]byte)
+
+    // http static resource file extension
+    static_ext []string = []string{
+        "js", 
+        "css", 
+        "ico",
+    }
+
+    // media resource files type
+    media_types []string = []string{
+        "image",
+        "video",
+        "audio",
+    }
+
+    // http static resource files
+    static_types []string = []string{
+        "text/css",
+        // "application/javascript",
+        // "application/x-javascript",
+        "application/msword",
+        "application/vnd.ms-excel",
+        "application/vnd.ms-powerpoint",
+        "application/x-ms-wmd",
+        "application/x-shockwave-flash",
+    }
 )
 
 const (
@@ -34,6 +65,7 @@ const tableCreateSQL = `CREATE TABLE if not exists ` + default_table + ` (
     content_type varchar(50) DEFAULT NULL,
     content_length int(11) DEFAULT NULL,
     host varchar(255) DEFAULT NULL,
+    port char(6) DEFAULT NULL,
     url text,
     scheme char(10) DEFAULT NULL,
     path text,
@@ -44,43 +76,28 @@ const tableCreateSQL = `CREATE TABLE if not exists ` + default_table + ` (
     date_start datetime DEFAULT NULL,
     date_end datetime DEFAULT NULL,
     extension char(32) DEFAULT NULL,
-    port char(6) DEFAULT NULL,
     PRIMARY KEY (id)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8`
 
-type Header struct {
-    http.Header
-}
-
 type Response struct {
-    ID            uint      `json:"id" db:",omitempty,json"`
-    Origin        string    `json:"origin" db:",json"`
-    Method        string    `json:"method" db:",json"`
-    Status        int       `json:"status" db:",json"`
-    ContentType   string    `json:"content_type" db:",json"`
-    ContentLength uint      `json:"content_length" db:",json"`
-    Host          string    `json:"host" db:",json"`
-    URL           string    `json:"url" db:",json"`
-    Scheme        string    `json:"scheme" db:",json"`
-    Path          string    `json:"path" db:",path"`
-    Header        Header    `json:"header,omitempty" db:",json"`
-    Body          []byte    `json:"body,omitempty" db:",json"`
-    RequestHeader Header    `json:"request_header,omitempty" db:",json"`
-    RequestBody   []byte    `json:"request_body,omitempty" db:",json"`
-    DateStart     time.Time `json:"date_start" db:",json"`
-    DateEnd       time.Time `json:"date_end" db:",json"`
-    TimeTaken     int64     `json:"time_taken" db:",json"`
-}
-
-func (h Header) MarshalDB() (interface{}, error) {
-    return json.Marshal(h.Header)
-}
-
-func (h *Header) UnmarshalDB(data interface{}) error {
-    if s, ok := data.(string); ok {
-        return json.Unmarshal([]byte(s), &h.Header)
-    }
-    return nil
+    ID            uint          `json:"id" db:",omitempty,json"`
+    Origin        string        `json:"origin" db:",json"`
+    Method        string        `json:"method" db:",json"`
+    Status        int           `json:"status" db:",json"`
+    ContentType   string        `json:"content_type" db:",json"`
+    ContentLength uint          `json:"content_length" db:",json"`
+    Host          string        `json:"host" db:",json"`
+    Port          string        `json:"port" db:",json"`
+    URL           string        `json:"url" db:",json"`
+    Scheme        string        `json:"scheme" db:",json"`
+    Path          string        `json:"path" db:",path"`
+    Extension     string        `json:"ext" db:",path"`
+    Header        http.Header   `json:"header,omitempty" db:",json"`
+    Body          []byte        `json:"body,omitempty" db:",json"`
+    RequestHeader http.Header   `json:"request_header,omitempty" db:",json"`
+    RequestBody   []byte        `json:"request_body,omitempty" db:",json"`
+    DateStart     time.Time     `json:"date_start" db:",json"`
+    DateEnd       time.Time     `json:"date_end" db:",json"`
 }
 
 func init() {
@@ -112,31 +129,107 @@ type ParserHTTP struct {
 }
 
 func (parser *ParserHTTP) Parser() Response {
+
+    var (
+        ctype string
+        clength int
+        StrHost string
+        StrPort string
+    )
+    
+    if len(parser.r.Header["Content-Type"]) >= 1 {
+        ctype = parser.r.Header["Content-Type"][0]
+    }
+
+    if len(parser.r.Header["Content-Length"]) >= 1 {
+        clength, _ = strconv.Atoi(parser.r.Header["Content-Length"][0])
+    }
+
+    SliceHost := strings.Split(parser.r.Request.URL.Host, ":")
+    if len(SliceHost) > 1 {
+        StrHost, StrPort = SliceHost[0], SliceHost[1]
+    } else {
+        StrHost = SliceHost[0]
+        if parser.r.Request.URL.Scheme == "https" {
+            StrPort = "443"
+        } else {
+            StrPort = "80"
+        }
+    }
+
     now := time.Now()
 
     r := Response{
         Origin:        parser.r.Request.RemoteAddr,
         Method:        parser.r.Request.Method,
         Status:        parser.r.StatusCode,
-        ContentType:   http.DetectContentType(parser.respbody),
-        ContentLength: uint(len(parser.respbody)),
-        Host:          parser.r.Request.URL.Host,
+        ContentType:   string(ctype),
+        ContentLength: uint(clength),
+        Host:          StrHost,
+        Port:          StrPort,
         URL:           parser.r.Request.URL.String(),
         Scheme:        parser.r.Request.URL.Scheme,
         Path:          parser.r.Request.URL.Path,
-        Header:        Header{parser.r.Header},
+        Extension:     GetExtension(parser.r.Request.URL.Path),
+        Header:        parser.r.Header,
         Body:          parser.respbody,
-        RequestHeader: Header{parser.r.Request.Header},
+        RequestHeader: parser.r.Request.Header,
         RequestBody:   parser.reqbody,
         DateStart:     parser.s,
         DateEnd:       now,
-        TimeTaken:     now.UnixNano() - parser.s.UnixNano(),
     }
     return r
 }
 
 func New(resp *http.Response, reqbody []byte, respbody []byte) *ParserHTTP {
     return &ParserHTTP{r: resp, reqbody: reqbody, respbody: respbody, s: time.Now()}
+}
+
+type ResType struct {
+    ext     string
+    ctype   string
+    mtype   string
+}
+
+func (r *ResType) isStatic() bool {
+    if ContainsString(static_ext, r.ext) {
+        return true
+    } else if ContainsString(static_types, r.ctype) {
+        return true
+    } else if ContainsString(media_types, r.mtype) {
+        return true
+    }
+    return false
+}
+
+func ContainsString(sl []string, v string) bool {
+    for _, vv := range sl {
+        if vv == v {
+            return true
+        }
+    }
+    return false
+}
+
+func GetContentType(HeradeCT string) string {
+    ct := strings.Split(HeradeCT, "; ")[0]
+    return ct
+}
+
+func GetExtension(path string) string {
+    SlicePath := strings.Split(path, ".")
+    if len(SlicePath) > 1 {
+        return SlicePath[len(SlicePath)-1]
+    }
+    return ""
+}
+
+func NewResType(ext string, ctype string) *ResType {
+    var mtype string
+    if ctype != "" {
+        mtype = strings.Split(ctype, "/")[0]
+    }
+    return &ResType{ext, ctype, mtype}
 }
 
 func RequestBody(res *http.Request) ([]byte, error) {
@@ -186,6 +279,9 @@ func handleResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
     b, err := json.Marshal(RespCapture)
     checkErr(err)
     fmt.Println(string(b))
+
+    // js, _ := json.Marshal(RespCapture.RequestHeader)
+    // fmt.Println(string(js))
 
     // printHeader(resp.Header)
     // fmt.Println(resp.StatusCode, resp.Proto, resp.ContentLength, resp.TransferEncoding)
