@@ -18,6 +18,9 @@ mv ./wyproxy2/ ./golang/
 export GOPATH="/root/golang"
 go build wyproxy.go
 ```
+## 安装信任证书
+iPhone使用safari浏览器打开   
+https://raw.githubusercontent.com/ring04h/wyproxy2/master/src/goproxy/ca.pem   
    
 ## 启动代理服务器
 ```bash
