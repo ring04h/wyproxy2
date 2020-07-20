@@ -277,6 +277,7 @@ func handleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *ht
 }
 
 func handleResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
+	
 	// Getting the Body
 	reqbody := RequestBodyMap[ctx.Session]
 	respbody, err := ResponseBody(resp)
